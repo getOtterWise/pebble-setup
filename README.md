@@ -77,7 +77,22 @@ When the runner already has pcov2 preinstalled (the tracer loaded in every
 PHP, `pcov2` on PATH), the action downloads nothing: it only writes the job's
 directory and exclude settings and exports the same environment. The same two
 workflow lines therefore work on GitHub-hosted runners and on pcov2 runners;
-no token is needed there.
+no token is needed there. On such a runner two more actions from this
+repository replace `setup-php` and the `services:` block:
+
+```yaml
+- uses: getOtterWise/fphpcov-setup/php@v1
+  with: { php-version: '8.3', extensions: 'mailparse' }   # extensions: only what the image lacks
+- uses: getOtterWise/fphpcov-setup/services@v1
+  with: { services: 'mysql:8.4, redis', databases: 'app, app_tenant', parallel: 4 }
+```
+
+`php` switches the preinstalled PHP in under a second; `extensions` adds
+distro packages the image does not carry, a few seconds each. `services`
+starts the listed servers on 127.0.0.1 (MySQL root/root, PostgreSQL
+postgres/postgres, Redis without a password) with the databases, and
+`parallel: N` adds `<name>_test_1` to `<name>_test_N` for each of them,
+which is what Laravel's `--parallel` expects.
 
 ## Notes
 

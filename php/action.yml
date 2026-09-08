@@ -9,6 +9,14 @@ inputs:
   php-version:
     description: PHP version preinstalled on the runner, e.g. "8.3".
     required: true
+  extensions:
+    description: >
+      Comma-separated PHP extensions to add when the image lacks them, by
+      their package name after php<version>- (mailparse, xdebug, mongodb, ...);
+      they come from the distro packages the image is built from and take a
+      few seconds each. Extensions the image already has cost nothing.
+    required: false
+    default: ''
 
 runs:
   using: composite
@@ -16,6 +24,7 @@ runs:
     - shell: bash
       env:
         V: ${{ inputs.php-version }}
+        EXTENSIONS: ${{ inputs.extensions }}
       run: |
         set -euo pipefail
         if [ ! -x "/usr/bin/php$V" ]; then
@@ -26,6 +35,15 @@ runs:
           [ -e "/usr/bin/$t$V" ] && sudo update-alternatives --set "$t" "/usr/bin/$t$V" >/dev/null
         done
         php -v | head -1
+        MISSING=()
+        for e in ${EXTENSIONS//,/ }; do
+          php -m | grep -qix "$e" || MISSING+=("php$V-$e")
+        done
+        if [ ${#MISSING[@]} -gt 0 ]; then
+          echo "installing ${MISSING[*]}"
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends "${MISSING[@]}"
+        fi
         if php -m | grep -ix pcov2 >/dev/null; then
           echo "pcov2 $(php -r 'echo phpversion("pcov2");') loaded"
         else
