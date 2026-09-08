@@ -23,9 +23,29 @@ is needed. Do not edit the files here.
 
 The action installs the prebuilt `pcov2.so` for the job's PHP, enables it in
 the PHP's ini scan directory, puts `pcov2` on PATH and exports `PCOV2_OUTPUT` and
-`PCOV2_GLUE`. `pcov2 run` injects the PHPUnit extension through a copy of the
-configuration, so `phpunit.xml` stays unchanged. It works with PHPUnit 9 to
-12, paratest, `php artisan test --parallel` and Pest 3.
+`PCOV2_GLUE`. `pcov2 run` hooks the PHPUnit extension in through a generated
+bootstrap script (PHPUnit 10+) or a copy of the configuration (PHPUnit 9), so
+`phpunit.xml` stays unchanged. It works with PHPUnit 9 to 12, paratest,
+`php artisan test --parallel`, Pest, and Symfony's phpunit-bridge. For a
+Laravel application it also turns fork mode on: the application boots once
+per process and each test runs in a forked copy. `pcov2 run --no-fork`, or
+`PCOV2_FORK=0` in the job's `env`, switches that off.
+
+## Report
+
+`pcov2 report` reads the streams from `$PCOV2_OUTPUT`, which the action
+exports. Without `-f` it prints a text summary and writes no file. Pass
+`-f clover` or `-f lcov` for a file an uploader can read:
+
+| Command                        | Writes                    |
+|--------------------------------|---------------------------|
+| `pcov2 report`                 | text summary on stdout    |
+| `pcov2 report -f clover`       | `build/logs/clover.xml`   |
+| `pcov2 report -f lcov`         | `build/logs/lcov.info`    |
+| `pcov2 report -f clover -o x`  | `x` (`-` for stdout)      |
+
+`build/logs/` is where most uploaders look by default, so they need no
+`--file` argument.
 
 ## Prebuilt assets
 
