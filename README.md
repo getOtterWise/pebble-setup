@@ -102,8 +102,9 @@ which is what Laravel's `--parallel` expects.
   `opcache.enable_cli=0` into an ini file that sorts after setup-php's
   `99-pecl.ini`, and fails when something still turns it on. Do not pass
   `-d opcache.enable_cli=1` to the test command.
-- Executable-line totals differ from php-code-coverage by design. Coverage
-  percentages stay within about a point. Recalibrate thresholds once.
+- `pcov2 report` reports the lines php-code-coverage would, using the
+  project's own copy of it through `php`; `--lines engine` gives the
+  tracer's own lines instead, whose totals differ by design.
 - `container:` jobs must run the action inside the container.
 
 ## License
