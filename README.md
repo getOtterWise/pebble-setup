@@ -18,7 +18,7 @@ is needed. Do not edit the files here.
 - uses: getOtterWise/fphpcov-setup@v1
   with: { directory: "app,routes,helpers.php" }   # what phpunit.xml <source> lists
 - run: pcov2 run -- vendor/bin/phpunit
-- run: pcov2 report -f clover -o clover.xml .pcov2/runs
+- run: pcov2 report -f clover                 # writes build/logs/clover.xml
 ```
 
 The action installs the prebuilt `pcov2.so` for the job's PHP, enables it in
@@ -64,7 +64,9 @@ no token is needed there.
 - Do not use `coverage: pcov` or `coverage: xdebug` in setup-php. PCOV next to
   pcov2 gives the same numbers but makes the run slow again; Xdebug conflicts.
 - opcache must be off in the coverage process. The action writes
-  `opcache.enable_cli=0`.
+  `opcache.enable_cli=0` into an ini file that sorts after setup-php's
+  `99-pecl.ini`, and fails when something still turns it on. Do not pass
+  `-d opcache.enable_cli=1` to the test command.
 - Executable-line totals differ from php-code-coverage by design. Coverage
   percentages stay within about a point. Recalibrate thresholds once.
 - `container:` jobs must run the action inside the container.

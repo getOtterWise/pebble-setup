@@ -10,7 +10,11 @@ author: pcov2
 
 inputs:
   services:
-    description: Comma-separated list of mysql, postgres, redis, valkey, memcached, meilisearch.
+    description: >
+      Comma-separated list of mysql, postgres, redis, valkey, memcached,
+      meilisearch. A version after a colon selects one of the preinstalled
+      servers: mysql:8.0 (what plain mysql means), mysql:8.4, mysql:9, mysql:26;
+      postgres:16 (plain postgres), postgres:17, postgres:18, postgres:19.
     required: true
   databases:
     description: Comma-separated database names to create on mysql and postgres.

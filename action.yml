@@ -91,9 +91,9 @@ runs:
         BIN=$(command -v pcov2)
         GLUE="${PCOV2_GLUE:-$(php -r 'echo ini_get("auto_prepend_file");')}"
         echo "pcov2 $VERSION is preinstalled on this runner ($BIN); writing the job settings only"
-        # "99-pcov2.job.ini" sorts after the image's "99-pcov2.ini"; the image ini must not set pcov2.directory
+        # "zz-" sorts after the image's "99-pcov2.ini" and after setup-php's "99-pecl.ini" (its ini-values); the image ini must not set pcov2.directory
         printf 'pcov2.directory=%s\npcov2.exclude=%s\nopcache.enable_cli=0\n%s\n' "$DIRECTORY" "$EXCLUDE" "$PCOV_OFF" > "${RUNNER_TEMP:-/tmp}/pcov2-job.ini"
-        $SUDO cp "${RUNNER_TEMP:-/tmp}/pcov2-job.ini" "$SCAN_DIR/99-pcov2.job.ini"
+        $SUDO cp "${RUNNER_TEMP:-/tmp}/pcov2-job.ini" "$SCAN_DIR/zz-pcov2.job.ini"
         else
 
         # ---- resolve the release --------------------------------------------------
@@ -154,7 +154,8 @@ runs:
           echo "$PCOV_OFF"
         } > pcov2.ini
         $SUDO mkdir -p "$SCAN_DIR"
-        $SUDO cp pcov2.ini "$SCAN_DIR/99-pcov2.ini"
+        # "zz-" sorts after setup-php's "99-pecl.ini", where its ini-values land, so opcache.enable_cli=0 wins.
+        $SUDO cp pcov2.ini "$SCAN_DIR/zz-pcov2.ini"
         echo "$TOOL/bin" >> "$GITHUB_PATH"
         fi
 
@@ -163,6 +164,11 @@ runs:
 
         # ---- verify ---------------------------------------------------------------
         php -m | grep -ix pcov2 >/dev/null || { echo "::error::pcov2 did not load; php -m output follows"; php -m; exit 1; }
+        # opcache in the coverage process makes the extension disable itself, and the run records no files.
+        if [ "$(php -r 'echo (int) ini_get("opcache.enable_cli");')" = 1 ]; then
+          echo "::error::opcache.enable_cli is on, so pcov2 cannot instrument; something sets it after $SCAN_DIR/zz-pcov2.ini (php --ini follows). Remove it for coverage runs, and never pass -d opcache.enable_cli=1 to the test command."
+          php --ini; exit 1
+        fi
         php -m | grep -ix xdebug >/dev/null && echo "::warning::xdebug is loaded; disable it for coverage runs"
         echo "pcov2 extension $(php -r 'echo phpversion("pcov2");') loaded, directory $DIRECTORY"
         "$BIN" --version
