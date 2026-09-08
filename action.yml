@@ -3,6 +3,8 @@ description: >
   Install the pcov2 coverage tracer for the PHP on this runner, the pcov2
   reporter binary, and the PHPUnit glue. Works with setup-php (use
   coverage: none) on GitHub-hosted and self-hosted Linux and macOS runners.
+  On a pcov2 runner image, where the tracer is preinstalled, it downloads
+  nothing and only writes the job's settings.
 author: pcov2
 
 inputs:
@@ -71,6 +73,28 @@ runs:
         SCAN_DIR=$(php -r 'echo PHP_CONFIG_FILE_SCAN_DIR;')
         echo "PHP $PHP_VERSION, $BUILD, $OS/$ARCH, extension_dir=$EXT_DIR, scan_dir=$SCAN_DIR"
         [ -n "$SCAN_DIR" ] || { echo "::error::this PHP has no ini scan directory; cannot enable the extension"; exit 1; }
+        SUDO=""; [ -w "$SCAN_DIR" ] || SUDO="sudo"
+
+        # ---- job settings ---------------------------------------------------------
+        abs() { case "$1" in /*) echo "$1";; *) echo "$GITHUB_WORKSPACE/$1";; esac; }
+        DIRECTORY=$(abs "$IN_DIRECTORY")
+        EXCLUDE=""
+        if [ -n "$IN_EXCLUDE" ]; then
+          IFS=',' read -ra parts <<< "$IN_EXCLUDE"
+          for p in "${parts[@]}"; do p=$(echo "$p" | xargs); [ -n "$p" ] && EXCLUDE="${EXCLUDE:+$EXCLUDE,}$(abs "$p")"; done
+        fi
+        PCOV_OFF=$(php -m | grep -ix pcov >/dev/null && echo "pcov.enabled=0" || true)
+
+        if php -m | grep -ix pcov2 >/dev/null && command -v pcov2 >/dev/null; then
+        # ---- preinstalled (pcov2 runner image): nothing to download ---------------
+        VERSION="v$(php -r 'echo phpversion("pcov2");')"
+        BIN=$(command -v pcov2)
+        GLUE="${PCOV2_GLUE:-$(php -r 'echo ini_get("auto_prepend_file");')}"
+        echo "pcov2 $VERSION is preinstalled on this runner ($BIN); writing the job settings only"
+        # "99-pcov2.job.ini" sorts after the image's "99-pcov2.ini"; the image ini must not set pcov2.directory
+        printf 'pcov2.directory=%s\npcov2.exclude=%s\nopcache.enable_cli=0\n%s\n' "$DIRECTORY" "$EXCLUDE" "$PCOV_OFF" > "${RUNNER_TEMP:-/tmp}/pcov2-job.ini"
+        $SUDO cp "${RUNNER_TEMP:-/tmp}/pcov2-job.ini" "$SCAN_DIR/99-pcov2.job.ini"
+        else
 
         # ---- resolve the release --------------------------------------------------
         if ! gh api "repos/$REPO" >/dev/null 2>&1; then
@@ -117,37 +141,32 @@ runs:
         cp "$BIN_ASSET" bin/pcov2 && chmod +x bin/pcov2
 
         # ---- install --------------------------------------------------------------
-        SUDO=""; [ -w "$EXT_DIR" ] || SUDO="sudo"
+        [ -w "$EXT_DIR" ] || SUDO="sudo"
         $SUDO cp pcov2.so "$EXT_DIR/pcov2.so"
-
-        abs() { case "$1" in /*) echo "$1";; *) echo "$GITHUB_WORKSPACE/$1";; esac; }
-        DIRECTORY=$(abs "$IN_DIRECTORY")
-        EXCLUDE=""
-        if [ -n "$IN_EXCLUDE" ]; then
-          IFS=',' read -ra parts <<< "$IN_EXCLUDE"
-          for p in "${parts[@]}"; do p=$(echo "$p" | xargs); [ -n "$p" ] && EXCLUDE="${EXCLUDE:+$EXCLUDE,}$(abs "$p")"; done
-        fi
+        BIN="$TOOL/bin/pcov2"
+        GLUE="$TOOL/glue/autoload.php"
         {
           echo "extension=pcov2.so"
           echo "pcov2.directory=$DIRECTORY"
           echo "pcov2.exclude=$EXCLUDE"
-          echo "auto_prepend_file=$TOOL/glue/autoload.php"
+          echo "auto_prepend_file=$GLUE"
           echo "opcache.enable_cli=0"
-          php -m | grep -ix pcov >/dev/null && echo "pcov.enabled=0"
+          echo "$PCOV_OFF"
         } > pcov2.ini
         $SUDO mkdir -p "$SCAN_DIR"
         $SUDO cp pcov2.ini "$SCAN_DIR/99-pcov2.ini"
-
         echo "$TOOL/bin" >> "$GITHUB_PATH"
+        fi
+
         echo "PCOV2_OUTPUT=$(abs "$IN_OUTPUT")" >> "$GITHUB_ENV"
-        echo "PCOV2_GLUE=$TOOL/glue/autoload.php" >> "$GITHUB_ENV"
+        echo "PCOV2_GLUE=$GLUE" >> "$GITHUB_ENV"
 
         # ---- verify ---------------------------------------------------------------
         php -m | grep -ix pcov2 >/dev/null || { echo "::error::pcov2 did not load; php -m output follows"; php -m; exit 1; }
         php -m | grep -ix xdebug >/dev/null && echo "::warning::xdebug is loaded; disable it for coverage runs"
         echo "pcov2 extension $(php -r 'echo phpversion("pcov2");') loaded, directory $DIRECTORY"
-        "$TOOL/bin/pcov2" --version
+        "$BIN" --version
 
         echo "version=$VERSION" >> "$GITHUB_OUTPUT"
         echo "extension=$EXT_DIR/pcov2.so" >> "$GITHUB_OUTPUT"
-        echo "binary=$TOOL/bin/pcov2" >> "$GITHUB_OUTPUT"
+        echo "binary=$BIN" >> "$GITHUB_OUTPUT"

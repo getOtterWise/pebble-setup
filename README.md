@@ -51,6 +51,14 @@ fallback.
 Outputs: `version`, `extension` (path of the installed `pcov2.so`), `binary`
 (path of the `pcov2` binary).
 
+## On a pcov2 runner image
+
+When the runner already has pcov2 preinstalled (the tracer loaded in every
+PHP, `pcov2` on PATH), the action downloads nothing: it only writes the job's
+directory and exclude settings and exports the same environment. The same two
+workflow lines therefore work on GitHub-hosted runners and on pcov2 runners;
+no token is needed there.
+
 ## Notes
 
 - Do not use `coverage: pcov` or `coverage: xdebug` in setup-php. PCOV next to

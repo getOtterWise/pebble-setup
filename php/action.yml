@@ -1,0 +1,33 @@
+name: Select PHP on a pcov2 runner
+description: >
+  Switch the default php, phpize and php-config on a pcov2 runner image to
+  one of the preinstalled versions. Nothing is downloaded; takes well under a
+  second. Use instead of setup-php on runners built from docker/runner.
+author: pcov2
+
+inputs:
+  php-version:
+    description: PHP version preinstalled on the runner, e.g. "8.3".
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        V: ${{ inputs.php-version }}
+      run: |
+        set -euo pipefail
+        if [ ! -x "/usr/bin/php$V" ]; then
+          echo "::error::PHP $V is not installed on this runner; installed: $(ls /usr/bin/php[0-9].[0-9] 2>/dev/null | sed 's|/usr/bin/php||' | tr '\n' ' ')"
+          exit 1
+        fi
+        for t in php phpize php-config phar phar.phar; do
+          [ -e "/usr/bin/$t$V" ] && sudo update-alternatives --set "$t" "/usr/bin/$t$V" >/dev/null
+        done
+        php -v | head -1
+        if php -m | grep -ix pcov2 >/dev/null; then
+          echo "pcov2 $(php -r 'echo phpversion("pcov2");') loaded"
+        else
+          echo "::warning::pcov2 is not loaded for PHP $V"
+        fi
