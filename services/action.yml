@@ -1,0 +1,38 @@
+name: Start services on a pcov2 runner
+description: >
+  Start the databases and caches a job needs on a pcov2 runner image, in
+  place of a services: block. Nothing runs until asked; each service starts
+  in about a second on tmpfs with durability off. Listens on 127.0.0.1 with
+  the usual ports and credentials (MySQL root/root, PostgreSQL
+  postgres/postgres, Redis or Valkey without password, Memcached, Meilisearch
+  without master key).
+author: pcov2
+
+inputs:
+  services:
+    description: Comma-separated list of mysql, postgres, redis, valkey, memcached, meilisearch.
+    required: true
+  databases:
+    description: Comma-separated database names to create on mysql and postgres.
+    required: false
+    default: ''
+  parallel:
+    description: Also create <name>_test_1..N for each database (Laravel parallel testing).
+    required: false
+    default: '0'
+
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        SERVICES: ${{ inputs.services }}
+        DATABASES: ${{ inputs.databases }}
+        PARALLEL: ${{ inputs.parallel }}
+      run: |
+        set -euo pipefail
+        if ! command -v pcov2-services >/dev/null; then
+          echo "::error::pcov2-services is not on this runner; this action only works on a pcov2 runner image (docker/runner)"
+          exit 1
+        fi
+        sudo pcov2-services start "$SERVICES" ${DATABASES:+--databases "$DATABASES"} --parallel "$PARALLEL"
