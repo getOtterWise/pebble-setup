@@ -1,0 +1,153 @@
+name: Set up pcov2
+description: >
+  Install the pcov2 coverage tracer for the PHP on this runner, the pcov2
+  reporter binary, and the PHPUnit glue. Works with setup-php (use
+  coverage: none) on GitHub-hosted and self-hosted Linux and macOS runners.
+author: pcov2
+
+inputs:
+  directory:
+    description: Comma-separated directories and files to cover, relative to the workspace (or absolute), e.g. "app,routes,helpers.php".
+    required: true
+  exclude:
+    description: Comma-separated paths to exclude, relative to the workspace.
+    required: false
+    default: ''
+  output:
+    description: Directory for coverage streams, exported as PCOV2_OUTPUT.
+    required: false
+    default: .pcov2/runs
+  version:
+    description: pcov2 release tag to install, or "latest".
+    required: false
+    default: latest
+  repository:
+    description: GitHub repository that publishes the releases. The default is public, so no token is needed.
+    required: false
+    default: getOtterWise/fphpcov-setup
+  token:
+    description: >
+      Token that can read releases of the repository above. Only needed when
+      that repository is private (fine-grained PAT with Contents: read).
+    required: false
+    default: ${{ github.token }}
+
+outputs:
+  version:
+    description: The installed release tag.
+    value: ${{ steps.install.outputs.version }}
+  extension:
+    description: Path of the installed pcov2.so.
+    value: ${{ steps.install.outputs.extension }}
+  binary:
+    description: Path of the pcov2 binary.
+    value: ${{ steps.install.outputs.binary }}
+
+runs:
+  using: composite
+  steps:
+    - id: install
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        REPO: ${{ inputs.repository }}
+        VERSION: ${{ inputs.version }}
+        IN_DIRECTORY: ${{ inputs.directory }}
+        IN_EXCLUDE: ${{ inputs.exclude }}
+        IN_OUTPUT: ${{ inputs.output }}
+      run: |
+        set -euo pipefail
+        command -v php >/dev/null || { echo "::error::php is not on PATH; run setup-php (with coverage: none) before this action"; exit 1; }
+
+        # ---- identify the PHP ABI -------------------------------------------------
+        BUILD=$(php -i | sed -n 's/^PHP Extension Build => //p')       # e.g. API20210902,NTS
+        API=$(echo "$BUILD" | sed -n 's/^API\([0-9]*\),.*/\1/p')
+        TS=$(echo "$BUILD" | grep -q ZTS && echo zts || echo nts)
+        DEBUG=$(echo "$BUILD" | grep -qi debug && echo 1 || echo 0)
+        OS=$(uname -s | tr '[:upper:]' '[:lower:]')                      # linux | darwin
+        ARCH=$(uname -m); case "$ARCH" in x86_64|amd64) ARCH=x86_64;; aarch64|arm64) ARCH=arm64;; esac
+        PHP_VERSION=$(php -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;')
+        EXT_DIR=$(php -r 'echo ini_get("extension_dir");')
+        SCAN_DIR=$(php -r 'echo PHP_CONFIG_FILE_SCAN_DIR;')
+        echo "PHP $PHP_VERSION, $BUILD, $OS/$ARCH, extension_dir=$EXT_DIR, scan_dir=$SCAN_DIR"
+        [ -n "$SCAN_DIR" ] || { echo "::error::this PHP has no ini scan directory; cannot enable the extension"; exit 1; }
+
+        # ---- resolve the release --------------------------------------------------
+        if ! gh api "repos/$REPO" >/dev/null 2>&1; then
+          echo "::error::the token cannot read $REPO; pass a fine-grained PAT with Contents: read on that repository as the 'token' input"
+          exit 1
+        fi
+        if [ "$VERSION" = latest ]; then
+          VERSION=$(gh release view --repo "$REPO" --json tagName -q .tagName)
+        fi
+        TOOL="${RUNNER_TOOL_CACHE:-$HOME/.cache}/pcov2/$VERSION/$API-$TS-$OS-$ARCH"
+        mkdir -p "$TOOL/bin" "$TOOL/glue"
+        echo "installing pcov2 $VERSION into $TOOL"
+
+        # ---- download assets ------------------------------------------------------
+        SO_ASSET="pcov2-php${API}-${TS}-${OS}-${ARCH}.so"
+        BIN_ASSET="pcov2-${OS}-${ARCH}"
+        cd "$TOOL"
+        gh release download "$VERSION" --repo "$REPO" --clobber \
+          --pattern SHA256SUMS --pattern pcov2-glue.tar.gz --pattern pcov2-ext-src.tar.gz \
+          --pattern "$BIN_ASSET" --pattern "$SO_ASSET" || true
+
+        verify() { grep " $1\$" SHA256SUMS | (command -v sha256sum >/dev/null && sha256sum -c - || shasum -a 256 -c -) >/dev/null; }
+        for f in pcov2-glue.tar.gz "$BIN_ASSET"; do
+          [ -f "$f" ] || { echo "::error::release $VERSION has no asset $f"; exit 1; }
+          verify "$f"
+        done
+
+        if [ -f "$SO_ASSET" ] && [ "$DEBUG" = 0 ]; then
+          verify "$SO_ASSET"
+          cp "$SO_ASSET" pcov2.so
+          echo "using prebuilt $SO_ASSET"
+        else
+          echo "no prebuilt extension for $BUILD on $OS/$ARCH; building from source"
+          # The public releases ship no extension source; only the private source repository does.
+          [ -f pcov2-ext-src.tar.gz ] || { echo "::error::release $VERSION of $REPO has no prebuilt extension $SO_ASSET and no source tarball; use a PHP build with a prebuilt asset, or set repository to getOtterWise/pcov2 with a token that can read it"; exit 1; }
+          verify pcov2-ext-src.tar.gz
+          command -v phpize >/dev/null || { echo "::error::phpize not found; install the PHP development headers"; exit 1; }
+          rm -rf ext-src && mkdir ext-src && tar xzf pcov2-ext-src.tar.gz -C ext-src
+          ( cd ext-src && phpize >/dev/null && ./configure --enable-pcov2 >/dev/null && make -j"$(nproc 2>/dev/null || sysctl -n hw.ncpu)" >/dev/null )
+          cp ext-src/modules/pcov2.so pcov2.so
+        fi
+
+        tar xzf pcov2-glue.tar.gz -C glue
+        cp "$BIN_ASSET" bin/pcov2 && chmod +x bin/pcov2
+
+        # ---- install --------------------------------------------------------------
+        SUDO=""; [ -w "$EXT_DIR" ] || SUDO="sudo"
+        $SUDO cp pcov2.so "$EXT_DIR/pcov2.so"
+
+        abs() { case "$1" in /*) echo "$1";; *) echo "$GITHUB_WORKSPACE/$1";; esac; }
+        DIRECTORY=$(abs "$IN_DIRECTORY")
+        EXCLUDE=""
+        if [ -n "$IN_EXCLUDE" ]; then
+          IFS=',' read -ra parts <<< "$IN_EXCLUDE"
+          for p in "${parts[@]}"; do p=$(echo "$p" | xargs); [ -n "$p" ] && EXCLUDE="${EXCLUDE:+$EXCLUDE,}$(abs "$p")"; done
+        fi
+        {
+          echo "extension=pcov2.so"
+          echo "pcov2.directory=$DIRECTORY"
+          echo "pcov2.exclude=$EXCLUDE"
+          echo "auto_prepend_file=$TOOL/glue/autoload.php"
+          echo "opcache.enable_cli=0"
+          php -m | grep -ix pcov >/dev/null && echo "pcov.enabled=0"
+        } > pcov2.ini
+        $SUDO mkdir -p "$SCAN_DIR"
+        $SUDO cp pcov2.ini "$SCAN_DIR/99-pcov2.ini"
+
+        echo "$TOOL/bin" >> "$GITHUB_PATH"
+        echo "PCOV2_OUTPUT=$(abs "$IN_OUTPUT")" >> "$GITHUB_ENV"
+        echo "PCOV2_GLUE=$TOOL/glue/autoload.php" >> "$GITHUB_ENV"
+
+        # ---- verify ---------------------------------------------------------------
+        php -m | grep -ix pcov2 >/dev/null || { echo "::error::pcov2 did not load; php -m output follows"; php -m; exit 1; }
+        php -m | grep -ix xdebug >/dev/null && echo "::warning::xdebug is loaded; disable it for coverage runs"
+        echo "pcov2 extension $(php -r 'echo phpversion("pcov2");') loaded, directory $DIRECTORY"
+        "$TOOL/bin/pcov2" --version
+
+        echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+        echo "extension=$EXT_DIR/pcov2.so" >> "$GITHUB_OUTPUT"
+        echo "binary=$TOOL/bin/pcov2" >> "$GITHUB_OUTPUT"
