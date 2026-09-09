@@ -49,3 +49,7 @@ runs:
         else
           echo "::warning::pcov2 is not loaded for PHP $V"
         fi
+        # The image runs the CLI with opcache and the tracing JIT on; a
+        # coverage run switches them off for its own processes only.
+        php -r '$s = function_exists("opcache_get_status") ? @opcache_get_status(false) : false;
+                printf("opcache %s, JIT %s\n", ini_get("opcache.enable_cli") ? "on" : "off", empty($s["jit"]["enabled"]) ? "off" : "on");'

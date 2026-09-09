@@ -9,10 +9,15 @@ author: pcov2
 
 inputs:
   directory:
-    description: Comma-separated directories and files to cover, relative to the workspace (or absolute), e.g. "app,routes,helpers.php".
-    required: true
+    description: Comma-separated directories and files to cover, relative to the workspace (or absolute), e.g. "app,routes,helpers.php". Default is what the PHPUnit configuration lists in <source> (PHPUnit 10+), <coverage> (9.3+) or <filter><whitelist>.
+    required: false
+    default: ''
   exclude:
-    description: Comma-separated paths to exclude, relative to the workspace.
+    description: Comma-separated paths to exclude, relative to the workspace. Default is the configuration's exclude list.
+    required: false
+    default: ''
+  configuration:
+    description: "PHPUnit configuration to read the lists from (default: phpunit.xml, phpunit.xml.dist or phpunit.dist.xml in the workspace)."
     required: false
     default: ''
   output:
@@ -56,6 +61,7 @@ runs:
         VERSION: ${{ inputs.version }}
         IN_DIRECTORY: ${{ inputs.directory }}
         IN_EXCLUDE: ${{ inputs.exclude }}
+        IN_CONFIGURATION: ${{ inputs.configuration }}
         IN_OUTPUT: ${{ inputs.output }}
       run: |
         set -euo pipefail
@@ -77,12 +83,26 @@ runs:
 
         # ---- job settings ---------------------------------------------------------
         abs() { case "$1" in /*) echo "$1";; *) echo "$GITHUB_WORKSPACE/$1";; esac; }
-        DIRECTORY=$(abs "$IN_DIRECTORY")
-        EXCLUDE=""
-        if [ -n "$IN_EXCLUDE" ]; then
-          IFS=',' read -ra parts <<< "$IN_EXCLUDE"
-          for p in "${parts[@]}"; do p=$(echo "$p" | xargs); [ -n "$p" ] && EXCLUDE="${EXCLUDE:+$EXCLUDE,}$(abs "$p")"; done
-        fi
+        list() { local out="" p; IFS=',' read -ra parts <<< "$1"; for p in "${parts[@]}"; do p=$(echo "$p" | xargs); [ -n "$p" ] && out="${out:+$out,}$(abs "$p")"; done; echo "$out"; }
+        DIRECTORY=$(list "$IN_DIRECTORY")
+        EXCLUDE=$(list "$IN_EXCLUDE")
+        # What the inputs leave empty comes from the PHPUnit configuration, as php-code-coverage reads it. Needs the glue, so it runs once GLUE is known.
+        job_settings() {
+          if [ -z "$IN_DIRECTORY" ] || [ -z "$IN_EXCLUDE" ]; then
+            local detected script="$(dirname "$GLUE")/src/detect-source.php"
+            if [ ! -f "$script" ]; then
+              # A release before 0.1.13 has no detector: the directory input must carry the list, and the excludes are what the input says.
+              [ -n "$IN_DIRECTORY" ] || { echo "::error::this pcov2 release cannot read the PHPUnit configuration ($script is missing); pass the directory input or use version 0.1.13 or later"; exit 1; }
+              return
+            fi
+            detected=$(cd "$GITHUB_WORKSPACE" && php "$script" ${IN_CONFIGURATION:+"$IN_CONFIGURATION"}) || detected=""
+            [ -n "$IN_DIRECTORY" ] || DIRECTORY=$(echo "$detected" | sed -n 's/^directory=//p')
+            [ -n "$IN_EXCLUDE" ] || EXCLUDE=$(echo "$detected" | sed -n 's/^exclude=//p')
+            [ "$(echo "$detected" | sed -n 's/^discover=//p')" != 0 ] || echo "PCOV2_DISCOVER=0" >> "$GITHUB_ENV"
+            [ -n "$DIRECTORY" ] || { echo "::error::no directory input, and the PHPUnit configuration lists no source to cover (<source>, <coverage> or <filter><whitelist>)"; exit 1; }
+            echo "from the PHPUnit configuration: directory=$DIRECTORY exclude=$EXCLUDE"
+          fi
+        }
         PCOV_OFF=$(php -m | grep -ix pcov >/dev/null && echo "pcov.enabled=0" || true)
 
         if php -m | grep -ix pcov2 >/dev/null && command -v pcov2 >/dev/null; then
@@ -91,6 +111,7 @@ runs:
         BIN=$(command -v pcov2)
         GLUE="${PCOV2_GLUE:-$(php -r 'echo ini_get("auto_prepend_file");')}"
         echo "pcov2 $VERSION is preinstalled on this runner ($BIN); writing the job settings only"
+        job_settings
         # "zz-" sorts after the image's "99-pcov2.ini" and after setup-php's "99-pecl.ini" (its ini-values); the image ini must not set pcov2.directory
         printf 'pcov2.directory=%s\npcov2.exclude=%s\nopcache.enable_cli=0\n%s\n' "$DIRECTORY" "$EXCLUDE" "$PCOV_OFF" > "${RUNNER_TEMP:-/tmp}/pcov2-job.ini"
         $SUDO cp "${RUNNER_TEMP:-/tmp}/pcov2-job.ini" "$SCAN_DIR/zz-pcov2.job.ini"
@@ -145,6 +166,7 @@ runs:
         $SUDO cp pcov2.so "$EXT_DIR/pcov2.so"
         BIN="$TOOL/bin/pcov2"
         GLUE="$TOOL/glue/autoload.php"
+        job_settings
         {
           echo "extension=pcov2.so"
           echo "pcov2.directory=$DIRECTORY"

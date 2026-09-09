@@ -15,15 +15,17 @@ is needed. Do not edit the files here.
 ```yaml
 - uses: shivammathur/setup-php@v2
   with: { php-version: '8.3', coverage: none }
-- uses: getOtterWise/fphpcov-setup@v1
-  with: { directory: "app,routes,helpers.php" }   # what phpunit.xml <source> lists
+- uses: getOtterWise/fphpcov-setup@v1         # covers what phpunit.xml lists
 - run: pcov2 run -- vendor/bin/phpunit
 - run: pcov2 report -f clover                 # writes build/logs/clover.xml
 ```
 
 The action installs the prebuilt `pcov2.so` for the job's PHP, enables it in
 the PHP's ini scan directory, puts `pcov2` on PATH and exports `PCOV2_OUTPUT` and
-`PCOV2_GLUE`. `pcov2 run` hooks the PHPUnit extension in through a generated
+`PCOV2_GLUE`. The files to cover come from the PHPUnit configuration, as
+php-code-coverage reads them: the include and exclude lists of `<source>`
+(PHPUnit 10+), `<coverage>` (9.3+) or `<filter><whitelist>`. The `directory`
+and `exclude` inputs override them. `pcov2 run` hooks the PHPUnit extension in through a generated
 bootstrap script (PHPUnit 10+) or a copy of the configuration (PHPUnit 9), so
 `phpunit.xml` stays unchanged. It works with PHPUnit 9 to 12, paratest,
 `php artisan test --parallel`, Pest, and Symfony's phpunit-bridge. For a
@@ -61,8 +63,9 @@ fallback.
 
 | Input        | Default              | Meaning |
 |--------------|----------------------|---------|
-| `directory`  | required             | Comma-separated directories and files to cover, relative to the workspace or absolute. Use what `phpunit.xml` lists in `<source>` (PHPUnit 10+) or `<coverage>` (PHPUnit 9). |
-| `exclude`    | empty                | Comma-separated paths to exclude, relative to the workspace. |
+| `directory`  | from the configuration | Comma-separated directories and files to cover, relative to the workspace or absolute. Default: the include list of `phpunit.xml`. |
+| `exclude`    | from the configuration | Comma-separated paths to exclude, relative to the workspace. Default: the exclude list of `phpunit.xml`. |
+| `configuration` | `phpunit.xml`, `.xml.dist`, `.dist.xml` | The PHPUnit configuration to read those lists from, relative to the workspace. |
 | `output`     | `.pcov2/runs`        | Directory for the coverage streams, exported as `PCOV2_OUTPUT`. |
 | `version`    | `latest`             | pcov2 release tag to install. |
 | `repository` | `getOtterWise/fphpcov-setup` | Repository that publishes the releases. |
@@ -98,13 +101,22 @@ which is what Laravel's `--parallel` expects.
 
 - Do not use `coverage: pcov` or `coverage: xdebug` in setup-php. PCOV next to
   pcov2 gives the same numbers but makes the run slow again; Xdebug conflicts.
-- opcache must be off in the coverage process. The action writes
-  `opcache.enable_cli=0` into an ini file that sorts after setup-php's
-  `99-pecl.ini`, and fails when something still turns it on. Do not pass
-  `-d opcache.enable_cli=1` to the test command.
+- opcache must be off in the coverage process: the tracer cannot instrument
+  the scripts opcache shares, and the JIT runs past its line handlers. The
+  action writes `opcache.enable_cli=0` into an ini file that sorts after
+  setup-php's `99-pecl.ini`, and fails when something still turns it on.
+  `pcov2 run` switches it off for the processes it starts as well, so a
+  runner that keeps opcache on for the rest of the job still records. Do not
+  pass `-d opcache.enable_cli=1` to the test command.
 - `pcov2 report` reports the lines php-code-coverage would, using the
   project's own copy of it through `php`; `--lines engine` gives the
   tracer's own lines instead, whose totals differ by design.
+- Tests marked `#[RunInSeparateProcess]` are recorded when the command runs
+  through `pcov2 run`. PHPUnit starts a process of its own for them that
+  registers no extensions; the bootstrap `pcov2 run` generates hooks that
+  process too. Starting PHPUnit directly with an `<extensions>` entry needs
+  `\Pcov2\Isolation::install();` in the project's bootstrap file instead, or
+  those tests carry no lines and nothing warns.
 - `container:` jobs must run the action inside the container.
 
 ## License
