@@ -1,9 +1,9 @@
-name: Select PHP on a pcov2 runner
+name: Select PHP on a pebble runner
 description: >
-  Switch the default php, phpize and php-config on a pcov2 runner image to
+  Switch the default php, phpize and php-config on a pebble runner image to
   one of the preinstalled versions. Nothing is downloaded; takes well under a
   second. Use instead of setup-php on runners built from docker/runner.
-author: pcov2
+author: pebble
 
 inputs:
   php-version:
@@ -44,10 +44,10 @@ runs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq --no-install-recommends "${MISSING[@]}"
         fi
-        if php -m | grep -ix pcov2 >/dev/null; then
-          echo "pcov2 $(php -r 'echo phpversion("pcov2");') loaded"
+        if php -m | grep -ix pebble >/dev/null; then
+          echo "pebble $(php -r 'echo phpversion("pebble");') loaded"
         else
-          echo "::warning::pcov2 is not loaded for PHP $V"
+          echo "::warning::pebble is not loaded for PHP $V"
         fi
         # The image runs the CLI with opcache and the tracing JIT on; a
         # coverage run switches them off for its own processes only.

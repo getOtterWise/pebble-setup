@@ -1,12 +1,12 @@
-name: Start services on a pcov2 runner
+name: Start services on a pebble runner
 description: >
-  Start the databases and caches a job needs on a pcov2 runner image, in
+  Start the databases and caches a job needs on a pebble runner image, in
   place of a services: block. Nothing runs until asked; each service starts
   in about a second on tmpfs with durability off. Listens on 127.0.0.1 with
   the usual ports and credentials (MySQL root/root, PostgreSQL
   postgres/postgres, Redis or Valkey without password, Memcached, Meilisearch
   without master key).
-author: pcov2
+author: pebble
 
 inputs:
   services:
@@ -35,8 +35,8 @@ runs:
         PARALLEL: ${{ inputs.parallel }}
       run: |
         set -euo pipefail
-        if ! command -v pcov2-services >/dev/null; then
-          echo "::error::pcov2-services is not on this runner; this action only works on a pcov2 runner image (docker/runner)"
+        if ! command -v pebble-services >/dev/null; then
+          echo "::error::pebble-services is not on this runner; this action only works on a pebble runner image (docker/runner)"
           exit 1
         fi
-        sudo pcov2-services start "$SERVICES" ${DATABASES:+--databases "$DATABASES"} --parallel "$PARALLEL"
+        sudo pebble-services start "$SERVICES" ${DATABASES:+--databases "$DATABASES"} --parallel "$PARALLEL"

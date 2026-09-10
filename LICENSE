@@ -1,6 +1,6 @@
 MIT License
 
-Copyright (c) 2026 pcov2 contributors
+Copyright (c) 2026 pebble contributors
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -19,3 +19,31 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+
+-------------------------------------------------------------------------------
+Third-party notices
+-------------------------------------------------------------------------------
+
+PCOV
+----
+
+`ext/pebble.c` takes its set of ignored opcodes, and the line rules that go with
+it, from PCOV (https://github.com/krakjoe/pcov), Copyright (c) The PHP Group,
+author krakjoe, which is under version 3.01 of the PHP License
+(http://www.php.net/license/3_01.txt). The same rules keep the executable lines
+of this tracer identical to PCOV's.
+
+This product includes PHP software, freely available from
+<http://www.php.net/software/>.
+
+PCOV is also an alternative backend at run time: with the pebble extension
+absent, `src/Collector.php` calls PCOV's public PHP functions. That use does not
+include or change PCOV's code.
+
+Runner image
+------------
+
+The image in `docker/runner/` installs PHP, PCOV and the database servers from
+distribution packages. Each keeps its own license, which the package files under
+`/usr/share/doc` in the image carry.

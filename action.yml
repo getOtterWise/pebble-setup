@@ -1,11 +1,11 @@
-name: Set up pcov2
+name: Set up pebble
 description: >
-  Install the pcov2 coverage tracer for the PHP on this runner, the pcov2
+  Install the pebble coverage tracer for the PHP on this runner, the pebble
   reporter binary, and the PHPUnit glue. Works with setup-php (use
   coverage: none) on GitHub-hosted and self-hosted Linux and macOS runners.
-  On a pcov2 runner image, where the tracer is preinstalled, it downloads
+  On a pebble runner image, where the tracer is preinstalled, it downloads
   nothing and only writes the job's settings.
-author: pcov2
+author: pebble
 
 inputs:
   directory:
@@ -21,17 +21,17 @@ inputs:
     required: false
     default: ''
   output:
-    description: Directory for coverage streams, exported as PCOV2_OUTPUT.
+    description: Directory for coverage streams, exported as PEBBLE_OUTPUT.
     required: false
-    default: .pcov2/runs
+    default: .pebble/runs
   version:
-    description: pcov2 release tag to install, or "latest".
+    description: pebble release tag to install, or "latest".
     required: false
     default: latest
   repository:
     description: GitHub repository that publishes the releases. The default is public, so no token is needed.
     required: false
-    default: getOtterWise/fphpcov-setup
+    default: getOtterWise/pebble-setup
   token:
     description: >
       Token that can read releases of the repository above. Only needed when
@@ -44,10 +44,10 @@ outputs:
     description: The installed release tag.
     value: ${{ steps.install.outputs.version }}
   extension:
-    description: Path of the installed pcov2.so.
+    description: Path of the installed pebble.so.
     value: ${{ steps.install.outputs.extension }}
   binary:
-    description: Path of the pcov2 binary.
+    description: Path of the pebble binary.
     value: ${{ steps.install.outputs.binary }}
 
 runs:
@@ -92,29 +92,36 @@ runs:
             local detected script="$(dirname "$GLUE")/src/detect-source.php"
             if [ ! -f "$script" ]; then
               # A release before 0.1.13 has no detector: the directory input must carry the list, and the excludes are what the input says.
-              [ -n "$IN_DIRECTORY" ] || { echo "::error::this pcov2 release cannot read the PHPUnit configuration ($script is missing); pass the directory input or use version 0.1.13 or later"; exit 1; }
+              [ -n "$IN_DIRECTORY" ] || { echo "::error::this pebble release cannot read the PHPUnit configuration ($script is missing); pass the directory input or use version 0.1.13 or later"; exit 1; }
               return
             fi
             detected=$(cd "$GITHUB_WORKSPACE" && php "$script" ${IN_CONFIGURATION:+"$IN_CONFIGURATION"}) || detected=""
             [ -n "$IN_DIRECTORY" ] || DIRECTORY=$(echo "$detected" | sed -n 's/^directory=//p')
             [ -n "$IN_EXCLUDE" ] || EXCLUDE=$(echo "$detected" | sed -n 's/^exclude=//p')
-            [ "$(echo "$detected" | sed -n 's/^discover=//p')" != 0 ] || echo "PCOV2_DISCOVER=0" >> "$GITHUB_ENV"
+            [ "$(echo "$detected" | sed -n 's/^discover=//p')" != 0 ] || echo "PEBBLE_DISCOVER=0" >> "$GITHUB_ENV"
             [ -n "$DIRECTORY" ] || { echo "::error::no directory input, and the PHPUnit configuration lists no source to cover (<source>, <coverage> or <filter><whitelist>)"; exit 1; }
             echo "from the PHPUnit configuration: directory=$DIRECTORY exclude=$EXCLUDE"
           fi
         }
         PCOV_OFF=$(php -m | grep -ix pcov >/dev/null && echo "pcov.enabled=0" || true)
 
-        if php -m | grep -ix pcov2 >/dev/null && command -v pcov2 >/dev/null; then
-        # ---- preinstalled (pcov2 runner image): nothing to download ---------------
-        VERSION="v$(php -r 'echo phpversion("pcov2");')"
-        BIN=$(command -v pcov2)
-        GLUE="${PCOV2_GLUE:-$(php -r 'echo ini_get("auto_prepend_file");')}"
-        echo "pcov2 $VERSION is preinstalled on this runner ($BIN); writing the job settings only"
+        if php -m | grep -ix pebble >/dev/null && command -v pebble >/dev/null; then
+        # ---- preinstalled (pebble runner image): nothing to download ---------------
+        VERSION="v$(php -r 'echo phpversion("pebble");')"
+        BIN=$(command -v pebble)
+        # The image exports PEBBLE_GLUE, a VM built from it keeps only the fixed
+        # layout (docker export drops the environment), and an image older than
+        # the one that stopped prepending the glue everywhere keeps the ini value.
+        GLUE="${PEBBLE_GLUE:-}"
+        [ -n "$GLUE" ] || [ ! -f /opt/pebble/php/autoload.php ] || GLUE=/opt/pebble/php/autoload.php
+        [ -n "$GLUE" ] || GLUE=$(php -r 'echo ini_get("auto_prepend_file");')
+        [ -f "$GLUE" ] || { echo "::error::the glue autoloader is not on this runner (PEBBLE_GLUE is empty and /opt/pebble/php/autoload.php is missing)"; exit 1; }
+        echo "pebble $VERSION is preinstalled on this runner ($BIN); writing the job settings only"
         job_settings
-        # "zz-" sorts after the image's "99-pcov2.ini" and after setup-php's "99-pecl.ini" (its ini-values); the image ini must not set pcov2.directory
-        printf 'pcov2.directory=%s\npcov2.exclude=%s\nopcache.enable_cli=0\n%s\n' "$DIRECTORY" "$EXCLUDE" "$PCOV_OFF" > "${RUNNER_TEMP:-/tmp}/pcov2-job.ini"
-        $SUDO cp "${RUNNER_TEMP:-/tmp}/pcov2-job.ini" "$SCAN_DIR/zz-pcov2.job.ini"
+        # "zz-" sorts after the image's "99-pebble.ini" and after setup-php's "99-pecl.ini" (its ini-values); the image ini must not set pebble.directory
+        # The image prepends nothing, so a job without this action gets a plain PHP; the prepend here is what a project that lists the extension in phpunit.xml and takes the glue from the runner needs. `pebble run` does not read it.
+        printf 'pebble.directory=%s\npebble.exclude=%s\nauto_prepend_file=%s\nopcache.enable_cli=0\n%s\n' "$DIRECTORY" "$EXCLUDE" "$GLUE" "$PCOV_OFF" > "${RUNNER_TEMP:-/tmp}/pebble-job.ini"
+        $SUDO cp "${RUNNER_TEMP:-/tmp}/pebble-job.ini" "$SCAN_DIR/zz-pebble.job.ini"
         else
 
         # ---- resolve the release --------------------------------------------------
@@ -125,76 +132,76 @@ runs:
         if [ "$VERSION" = latest ]; then
           VERSION=$(gh release view --repo "$REPO" --json tagName -q .tagName)
         fi
-        TOOL="${RUNNER_TOOL_CACHE:-$HOME/.cache}/pcov2/$VERSION/$API-$TS-$OS-$ARCH"
+        TOOL="${RUNNER_TOOL_CACHE:-$HOME/.cache}/pebble/$VERSION/$API-$TS-$OS-$ARCH"
         mkdir -p "$TOOL/bin" "$TOOL/glue"
-        echo "installing pcov2 $VERSION into $TOOL"
+        echo "installing pebble $VERSION into $TOOL"
 
         # ---- download assets ------------------------------------------------------
-        SO_ASSET="pcov2-php${API}-${TS}-${OS}-${ARCH}.so"
-        BIN_ASSET="pcov2-${OS}-${ARCH}"
+        SO_ASSET="pebble-php${API}-${TS}-${OS}-${ARCH}.so"
+        BIN_ASSET="pebble-${OS}-${ARCH}"
         cd "$TOOL"
         gh release download "$VERSION" --repo "$REPO" --clobber \
-          --pattern SHA256SUMS --pattern pcov2-glue.tar.gz --pattern pcov2-ext-src.tar.gz \
+          --pattern SHA256SUMS --pattern pebble-glue.tar.gz --pattern pebble-ext-src.tar.gz \
           --pattern "$BIN_ASSET" --pattern "$SO_ASSET" || true
 
         verify() { grep " $1\$" SHA256SUMS | (command -v sha256sum >/dev/null && sha256sum -c - || shasum -a 256 -c -) >/dev/null; }
-        for f in pcov2-glue.tar.gz "$BIN_ASSET"; do
+        for f in pebble-glue.tar.gz "$BIN_ASSET"; do
           [ -f "$f" ] || { echo "::error::release $VERSION has no asset $f"; exit 1; }
           verify "$f"
         done
 
         if [ -f "$SO_ASSET" ] && [ "$DEBUG" = 0 ]; then
           verify "$SO_ASSET"
-          cp "$SO_ASSET" pcov2.so
+          cp "$SO_ASSET" pebble.so
           echo "using prebuilt $SO_ASSET"
         else
           echo "no prebuilt extension for $BUILD on $OS/$ARCH; building from source"
           # The public releases ship no extension source; only the private source repository does.
-          [ -f pcov2-ext-src.tar.gz ] || { echo "::error::release $VERSION of $REPO has no prebuilt extension $SO_ASSET and no source tarball; use a PHP build with a prebuilt asset, or set repository to getOtterWise/pcov2 with a token that can read it"; exit 1; }
-          verify pcov2-ext-src.tar.gz
+          [ -f pebble-ext-src.tar.gz ] || { echo "::error::release $VERSION of $REPO has no prebuilt extension $SO_ASSET and no source tarball; use a PHP build with a prebuilt asset, or set repository to getOtterWise/pebble with a token that can read it"; exit 1; }
+          verify pebble-ext-src.tar.gz
           command -v phpize >/dev/null || { echo "::error::phpize not found; install the PHP development headers"; exit 1; }
-          rm -rf ext-src && mkdir ext-src && tar xzf pcov2-ext-src.tar.gz -C ext-src
-          ( cd ext-src && phpize >/dev/null && ./configure --enable-pcov2 >/dev/null && make -j"$(nproc 2>/dev/null || sysctl -n hw.ncpu)" >/dev/null )
-          cp ext-src/modules/pcov2.so pcov2.so
+          rm -rf ext-src && mkdir ext-src && tar xzf pebble-ext-src.tar.gz -C ext-src
+          ( cd ext-src && phpize >/dev/null && ./configure --enable-pebble >/dev/null && make -j"$(nproc 2>/dev/null || sysctl -n hw.ncpu)" >/dev/null )
+          cp ext-src/modules/pebble.so pebble.so
         fi
 
-        tar xzf pcov2-glue.tar.gz -C glue
-        cp "$BIN_ASSET" bin/pcov2 && chmod +x bin/pcov2
+        tar xzf pebble-glue.tar.gz -C glue
+        cp "$BIN_ASSET" bin/pebble && chmod +x bin/pebble
 
         # ---- install --------------------------------------------------------------
         [ -w "$EXT_DIR" ] || SUDO="sudo"
-        $SUDO cp pcov2.so "$EXT_DIR/pcov2.so"
-        BIN="$TOOL/bin/pcov2"
+        $SUDO cp pebble.so "$EXT_DIR/pebble.so"
+        BIN="$TOOL/bin/pebble"
         GLUE="$TOOL/glue/autoload.php"
         job_settings
         {
-          echo "extension=pcov2.so"
-          echo "pcov2.directory=$DIRECTORY"
-          echo "pcov2.exclude=$EXCLUDE"
+          echo "extension=pebble.so"
+          echo "pebble.directory=$DIRECTORY"
+          echo "pebble.exclude=$EXCLUDE"
           echo "auto_prepend_file=$GLUE"
           echo "opcache.enable_cli=0"
           echo "$PCOV_OFF"
-        } > pcov2.ini
+        } > pebble.ini
         $SUDO mkdir -p "$SCAN_DIR"
         # "zz-" sorts after setup-php's "99-pecl.ini", where its ini-values land, so opcache.enable_cli=0 wins.
-        $SUDO cp pcov2.ini "$SCAN_DIR/zz-pcov2.ini"
+        $SUDO cp pebble.ini "$SCAN_DIR/zz-pebble.ini"
         echo "$TOOL/bin" >> "$GITHUB_PATH"
         fi
 
-        echo "PCOV2_OUTPUT=$(abs "$IN_OUTPUT")" >> "$GITHUB_ENV"
-        echo "PCOV2_GLUE=$GLUE" >> "$GITHUB_ENV"
+        echo "PEBBLE_OUTPUT=$(abs "$IN_OUTPUT")" >> "$GITHUB_ENV"
+        echo "PEBBLE_GLUE=$GLUE" >> "$GITHUB_ENV"
 
         # ---- verify ---------------------------------------------------------------
-        php -m | grep -ix pcov2 >/dev/null || { echo "::error::pcov2 did not load; php -m output follows"; php -m; exit 1; }
+        php -m | grep -ix pebble >/dev/null || { echo "::error::pebble did not load; php -m output follows"; php -m; exit 1; }
         # opcache in the coverage process makes the extension disable itself, and the run records no files.
         if [ "$(php -r 'echo (int) ini_get("opcache.enable_cli");')" = 1 ]; then
-          echo "::error::opcache.enable_cli is on, so pcov2 cannot instrument; something sets it after $SCAN_DIR/zz-pcov2.ini (php --ini follows). Remove it for coverage runs, and never pass -d opcache.enable_cli=1 to the test command."
+          echo "::error::opcache.enable_cli is on, so pebble cannot instrument; something sets it after $SCAN_DIR/zz-pebble.ini (php --ini follows). Remove it for coverage runs, and never pass -d opcache.enable_cli=1 to the test command."
           php --ini; exit 1
         fi
         php -m | grep -ix xdebug >/dev/null && echo "::warning::xdebug is loaded; disable it for coverage runs"
-        echo "pcov2 extension $(php -r 'echo phpversion("pcov2");') loaded, directory $DIRECTORY"
+        echo "pebble extension $(php -r 'echo phpversion("pebble");') loaded, directory $DIRECTORY"
         "$BIN" --version
 
         echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-        echo "extension=$EXT_DIR/pcov2.so" >> "$GITHUB_OUTPUT"
+        echo "extension=$EXT_DIR/pebble.so" >> "$GITHUB_OUTPUT"
         echo "binary=$BIN" >> "$GITHUB_OUTPUT"
