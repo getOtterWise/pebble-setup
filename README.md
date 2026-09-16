@@ -121,6 +121,11 @@ which is what Laravel's `--parallel` expects.
   `\Pebble\Isolation::install();` in the project's bootstrap file instead, or
   those tests carry no lines and nothing warns.
 - `container:` jobs must run the action inside the container.
+- A pebble runner has no Docker daemon. Docker container actions (an action
+  with a Dockerfile, or `docker://`), `services:` blocks and `container:` jobs
+  do not run on one; the `services` action above starts the servers instead,
+  and a call to `docker` prints that. On a GitHub-hosted runner all of them
+  work as usual.
 
 ## License
 
