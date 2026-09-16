@@ -28,10 +28,12 @@ php-code-coverage reads them: the include and exclude lists of `<source>`
 and `exclude` inputs override them. `pebble run` hooks the PHPUnit extension in through a generated
 bootstrap script (PHPUnit 10+) or a copy of the configuration (PHPUnit 9), so
 `phpunit.xml` stays unchanged. It works with PHPUnit 9 to 12, paratest,
-`php artisan test --parallel`, Pest, and Symfony's phpunit-bridge. For a
-Laravel application it also turns fork mode on: the application boots once
-per process and each test runs in a forked copy. `pebble run --no-fork`, or
-`PEBBLE_FORK=0` in the job's `env`, switches that off.
+`php artisan test --parallel`, Pest, and Symfony's phpunit-bridge.
+
+The releases here are the coverage build. Fork mode, where the application
+boots once per process and each test runs in a forked copy, is not part of
+it: it runs on the pebble hosted runner. `pebble run --fork` with this build
+says so and runs the tests as PHPUnit does.
 
 ## Report
 
@@ -53,7 +55,7 @@ exports. Without `-f` it prints a text summary and writes no file. Pass
 
 Each release of this repository carries `pebble.so` for PHP 8.1 to 8.5 (NTS,
 Linux x86_64 and macOS arm64), the `pebble` binary for those platforms, and the
-PHP glue. The extension source is not published, so a PHP build without a
+PHP glue, all without fork mode. The extension source is not published, so a PHP build without a
 prebuilt asset (ZTS, debug, Linux arm64, Alpine) fails with a message that
 says so. Organizations with access to the private source can set
 `repository: getOtterWise/pebble` and a `token` to get the from-source
