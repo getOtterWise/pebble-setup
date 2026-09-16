@@ -16,8 +16,7 @@ is needed. Do not edit the files here.
 - uses: shivammathur/setup-php@v2
   with: { php-version: '8.3', coverage: none }
 - uses: getOtterWise/pebble-setup@v1         # covers what phpunit.xml lists
-- run: pebble run -- vendor/bin/phpunit
-- run: pebble report -f clover                 # writes build/logs/clover.xml
+- run: pebble run -- vendor/bin/phpunit --coverage-clover=build/logs/clover.xml
 ```
 
 The action installs the prebuilt `pebble.so` for the job's PHP, enables it in
@@ -37,8 +36,11 @@ says so and runs the tests as PHPUnit does.
 
 ## Report
 
-`pebble report` reads the streams from `$PEBBLE_OUTPUT`, which the action
-exports. Without `-f` it prints a text summary and writes no file. Pass
+`pebble run` takes PHPUnit's `--coverage-clover` and `--coverage-text` out of
+the command and writes those reports from the streams after the tests, so
+PHPUnit does not look for a coverage driver. `pebble report` writes the same
+reports as a step of its own. It reads the streams from `$PEBBLE_OUTPUT`,
+which the action exports. Without `-f` it prints a text summary and writes no file. Pass
 `-f clover` or `-f lcov` for a file an uploader can read:
 
 | Command                        | Writes                    |
