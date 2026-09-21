@@ -1,0 +1,55 @@
+name: Restore from the pebble cache
+description: >
+  Restore what an earlier job of this repository saved: a vendor directory, a
+  Composer cache, a node_modules, an impact index. The runner reaches the
+  per-tenant cache service over the network with a credential minted for this
+  job alone, so there is no cache directory two jobs share. The scope is not
+  the job's to choose: a branch reads its own entries and then the default
+  branch's, and a fork pull request can write neither.
+
+  It takes no path: an entry holds the paths its save named, and puts them
+  back where they were. Pair it with getOtterWise/pebble-setup/cache/save@v1
+  after the step that fills them. A job with no cache service, and a job whose entry is gone,
+  restores nothing and carries on.
+author: pebble
+
+inputs:
+  key:
+    description: The exact key this cache is stored under, e.g. vendor-8.3-${{ hashFiles('composer.lock') }}.
+    required: true
+  restore-keys:
+    description: >
+      Prefixes to fall back to, one per line, most wanted first. The newest
+      entry whose key starts with one of them is restored.
+    required: false
+    default: ''
+
+outputs:
+  cache-hit:
+    description: '"true" when the exact key was found, "false" for a prefix match or a miss.'
+    value: ${{ steps.restore.outputs.cache-hit }}
+  cache-matched-key:
+    description: The key that was actually restored, if any.
+    value: ${{ steps.restore.outputs.cache-matched-key }}
+
+runs:
+  using: composite
+  steps:
+    - id: restore
+      shell: bash
+      env:
+        KEY: ${{ inputs.key }}
+        RESTORE_KEYS: ${{ inputs.restore-keys }}
+      run: |
+        set -uo pipefail
+        # The token is this job's own, and it is still a credential in a log
+        # that anybody may read. Mask it before it can be printed.
+        [ -n "${PEBBLE_CACHE_TOKEN:-}" ] && echo "::add-mask::$PEBBLE_CACHE_TOKEN"
+        if ! command -v pebble-cache >/dev/null; then
+          echo "::warning::pebble-cache is not on this runner; nothing restored"
+          echo "cache-hit=false" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+        ARGS=()
+        while IFS= read -r k; do [ -n "$k" ] && ARGS+=(--restore-key "$k"); done <<< "$RESTORE_KEYS"
+        pebble-cache restore --key "$KEY" ${ARGS[@]+"${ARGS[@]}"}

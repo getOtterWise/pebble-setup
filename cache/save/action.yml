@@ -1,0 +1,39 @@
+name: Save to the pebble cache
+description: >
+  Save what the next job of this repository should not have to build again.
+  The entry belongs to the ref this job runs on, and it is immutable: a second
+  job with the same key reads the first one's entry instead of replacing it,
+  so the key carries what the content depends on (a lock file hash, a PHP
+  version).
+
+  It never fails a build. A cache that is full, unreachable or already holds
+  the key is a line in the log and nothing else.
+author: pebble
+
+inputs:
+  key:
+    description: The key to store this under, e.g. vendor-8.3-${{ hashFiles('composer.lock') }}.
+    required: true
+  path:
+    description: Files and directories to save, one per line. What does not exist is skipped.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        KEY: ${{ inputs.key }}
+        PATHS: ${{ inputs.path }}
+      run: |
+        set -uo pipefail
+        # The token is this job's own, and it is still a credential in a log
+        # that anybody may read. Mask it before it can be printed.
+        [ -n "${PEBBLE_CACHE_TOKEN:-}" ] && echo "::add-mask::$PEBBLE_CACHE_TOKEN"
+        if ! command -v pebble-cache >/dev/null; then
+          echo "::warning::pebble-cache is not on this runner; nothing saved"
+          exit 0
+        fi
+        ARGS=()
+        while IFS= read -r p; do [ -n "$p" ] && ARGS+=(--path "$p"); done <<< "$PATHS"
+        pebble-cache save --key "$KEY" ${ARGS[@]+"${ARGS[@]}"}

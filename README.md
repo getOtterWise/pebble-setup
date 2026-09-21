@@ -101,6 +101,29 @@ postgres/postgres, Redis without a password) with the databases, and
 `parallel: N` adds `<name>_test_1` to `<name>_test_N` for each of them,
 which is what Laravel's `--parallel` expects.
 
+A third one keeps what the next job should not build again:
+
+```yaml
+- uses: getOtterWise/pebble-setup/cache@v1
+  with:
+    key: vendor-8.3-${{ hashFiles('composer.lock') }}
+    restore-keys: vendor-8.3-
+- run: composer install --no-interaction --prefer-dist
+- uses: getOtterWise/pebble-setup/cache/save@v1
+  with:
+    key: vendor-8.3-${{ hashFiles('composer.lock') }}
+    path: vendor
+```
+
+The runner reaches a cache service over the network with a credential minted
+for that job alone, so no two jobs share a directory. The scope is not the
+job's to choose: a branch reads its own entries and then the default branch's,
+and a job of a fork pull request writes a scope of its own and never the
+branch's. An entry is immutable, so put what the content depends on in the
+key. Restore takes no path, because the entry holds the paths its save named.
+Nothing here fails a build: no cache service, no entry, or an entry whose
+digest does not match, and the job carries on and installs what it needs.
+
 ## Notes
 
 - Do not enable another coverage driver in setup-php: `coverage: none` is the
