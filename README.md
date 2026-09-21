@@ -124,6 +124,58 @@ key. Restore takes no path, because the entry holds the paths its save named.
 Nothing here fails a build: no cache service, no entry, or an entry whose
 digest does not match, and the job carries on and installs what it needs.
 
+### npm and the asset build
+
+A front end gives two more entries, and they are a different shape from
+`vendor`. `composer install` corrects a near miss in place, so a prefix key
+helps it. `npm ci` deletes `node_modules` before it installs, so a near miss
+buys nothing: keep the directory itself and skip the step on a hit, which
+`cache-hit` reports.
+
+```yaml
+- uses: actions/setup-node@v4
+  with: { node-version: '22' }
+
+- uses: getOtterWise/pebble-setup/cache@v1
+  id: npm
+  with:
+    key: node22-${{ hashFiles('package-lock.json') }}
+- run: npm ci
+  if: steps.npm.outputs.cache-hit != 'true'
+- uses: getOtterWise/pebble-setup/cache/save@v1
+  if: steps.npm.outputs.cache-hit != 'true'
+  with:
+    key: node22-${{ hashFiles('package-lock.json') }}
+    path: node_modules
+
+- uses: getOtterWise/pebble-setup/cache@v1
+  id: assets
+  with:
+    key: assets-${{ hashFiles('package-lock.json', 'vite.config.js', 'resources/**') }}
+- run: npm run build
+  if: steps.assets.outputs.cache-hit != 'true'
+- uses: getOtterWise/pebble-setup/cache/save@v1
+  if: steps.assets.outputs.cache-hit != 'true'
+  with:
+    key: assets-${{ hashFiles('package-lock.json', 'vite.config.js', 'resources/**') }}
+    path: public/build
+```
+
+Three things decide whether this is correct:
+
+- **The Node major belongs in the key.** The runner image carries no Node;
+  `actions/setup-node` downloads it, and a compiled native module built for one
+  major does not load in the next.
+- **The asset key names everything the build reads**, not only the lock file.
+  Then a commit that touches no front end file skips `npm ci` and `npm run
+  build` both, and a commit that changes one line of CSS builds again.
+- **Save on a miss only.** An entry is immutable, so a second save of the same
+  key is refused, but the job packs the archive before it hears that.
+
+A path may start with `~/`, for a package manager's own download cache
+(`~/.npm`, `~/.cache/ms-playwright`). That is the other shape: keep the
+downloads, and run the install every time.
+
 ## Notes
 
 - Do not enable another coverage driver in setup-php: `coverage: none` is the

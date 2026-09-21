@@ -12,10 +12,16 @@ author: pebble
 
 inputs:
   key:
-    description: The key to store this under, e.g. vendor-8.3-${{ hashFiles('composer.lock') }}.
+    description: >
+      The key to store this under, the same one the restore step used. A
+      description here is parsed as an expression, so it carries no example of
+      one.
     required: true
   path:
-    description: Files and directories to save, one per line. What does not exist is skipped.
+    description: >
+      Files and directories to save, one per line. A path may start with `~/`
+      for one under the runner's home, such as a package manager's download
+      cache. What does not exist is skipped.
     required: true
 
 runs:

@@ -15,7 +15,10 @@ author: pebble
 
 inputs:
   key:
-    description: The exact key this cache is stored under, e.g. vendor-8.3-${{ hashFiles('composer.lock') }}.
+    description: >
+      The exact key this cache is stored under, such as vendor-8.3- followed by
+      a hashFiles of composer.lock. A description here is parsed as an
+      expression, so it carries no example of one.
     required: true
   restore-keys:
     description: >
