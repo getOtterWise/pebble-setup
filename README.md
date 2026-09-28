@@ -95,11 +95,16 @@ repository replace `setup-php` and the `services:` block:
 ```
 
 `php` switches the preinstalled PHP in under a second; `extensions` adds
-distro packages the image does not carry, a few seconds each. `services`
+distro packages the image does not carry, a few seconds each, and reads
+setup-php's list as it is, with `ini-values` and `coverage` too. `services`
 starts the listed servers on 127.0.0.1 (MySQL root/root, PostgreSQL
 postgres/postgres, Redis without a password) with the databases, and
 `parallel: N` adds `<name>_test_1` to `<name>_test_N` for each of them,
-which is what Laravel's `--parallel` expects.
+which is what Laravel's `--parallel` expects. `user` and `password` give the
+job the account its `services:` block had (`user: root` and no `password`
+for `MYSQL_ALLOW_EMPTY_PASSWORD`), and `ports: mysql=33306` the port it
+mapped. MariaDB (`mariadb:10.11` to `mariadb:12.3`), MySQL 5.7 (amd64) and
+PostgreSQL 14 to 19 are there too.
 
 A third one keeps what the next job should not build again:
 
@@ -133,8 +138,8 @@ buys nothing: keep the directory itself and skip the step on a hit, which
 `cache-hit` reports.
 
 ```yaml
-- uses: actions/setup-node@v4
-  with: { node-version: '22' }
+- uses: actions/setup-node@v7
+  with: { node-version: '22', package-manager-cache: false }
 
 - uses: getOtterWise/pebble-setup/cache@v1
   id: npm
@@ -163,9 +168,17 @@ buys nothing: keep the directory itself and skip the step on a hit, which
 
 Three things decide whether this is correct:
 
-- **The Node major belongs in the key.** The runner image carries no Node;
-  `actions/setup-node` downloads it, and a compiled native module built for one
-  major does not load in the next.
+- **The Node major belongs in the key.** A compiled native module built for
+  one major does not load in the next. On the runner image `setup-node` finds
+  20, 22 and 24 in the tool cache and downloads nothing for a version such as
+  `22` or `22.x`; an alias such as `lts/*` is resolved online first, and
+  another major is downloaded as on any runner.
+- **`setup-node` from v5 on caches by itself** when `package.json` has a
+  `packageManager` field, in GitHub's cache service. With `node_modules` in
+  this cache that is a second cache doing the same job, so
+  `package-manager-cache: false` turns it off. v5 and later also run on Node
+  24; v4 declares Node 20, which a current runner runs on 24 anyway and says
+  so in a notice on every job.
 - **The asset key names everything the build reads**, not only the lock file.
   Then a commit that touches no front end file skips `npm ci` and `npm run
   build` both, and a commit that changes one line of CSS builds again.
@@ -175,6 +188,34 @@ Three things decide whether this is correct:
 A path may start with `~/`, for a package manager's own download cache
 (`~/.npm`, `~/.cache/ms-playwright`). That is the other shape: keep the
 downloads, and run the install every time.
+
+### PHPStan and Larastan
+
+PHPStan keeps a result cache in its `tmpDir` (by default the system temporary
+directory's `phpstan/`) and checks it by itself: a file that changed, or a
+file it depends on, is analysed again, and a new configuration or version
+throws the cache away. So a result cache from an older commit is safe to
+restore, and it is the third shape: a key per commit, the newest one by prefix.
+
+```yaml
+- uses: getOtterWise/pebble-setup/cache@v1
+  with:
+    key: phpstan-${{ github.sha }}
+    restore-keys: phpstan-
+- run: vendor/bin/phpstan analyse --memory-limit=2G
+- uses: getOtterWise/pebble-setup/cache/save@v1
+  if: always()
+  with:
+    key: phpstan-${{ github.sha }}
+    path: /tmp/phpstan
+```
+
+`if: always()` keeps the cache when PHPStan reports errors, which is when the
+next run needs it most. Every commit saves an entry of its own, since an entry
+is immutable; a branch restores its newest one and then the default branch's,
+and the ones nothing reads any more are evicted. Larastan is PHPStan with an
+extension, so the same steps apply. A `tmpDir` set in `phpstan.neon` is the
+path to save instead.
 
 ## Notes
 

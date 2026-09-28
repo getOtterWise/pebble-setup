@@ -2,21 +2,33 @@ name: Select PHP on a pebble runner
 description: >
   Switch the default php, phpize and php-config on a pebble runner image to
   one of the preinstalled versions. Nothing is downloaded; takes well under a
-  second. Use instead of setup-php on runners built from docker/runner.
+  second. Use instead of setup-php on runners built from docker/runner; it
+  takes setup-php's php-version, extensions, ini-values and coverage inputs.
 author: pebble
 
 inputs:
   php-version:
-    description: PHP version preinstalled on the runner, e.g. "8.3".
+    description: PHP version preinstalled on the runner, e.g. "8.3", or "latest".
     required: true
   extensions:
     description: >
-      Comma-separated PHP extensions to add when the image lacks them, by
-      their package name after php<version>- (mailparse, xdebug, mongodb, ...);
-      they come from the distro packages the image is built from and take a
-      few seconds each. Extensions the image already has cost nothing.
+      Comma-separated PHP extensions, as setup-php takes them. What the image
+      has costs nothing; the rest comes from the distro packages the image is
+      built from, a few seconds each. A leading colon disables an extension,
+      and a version or source after the name is ignored (the distro's build is
+      what the image has).
     required: false
     default: ''
+  ini-values:
+    description: Comma-separated php.ini settings for the CLI, as setup-php takes them.
+    required: false
+    default: ''
+  coverage:
+    description: >
+      pcov or xdebug switches that driver on for jobs that do not use pebble;
+      none (the default) keeps the image as it is.
+    required: false
+    default: 'none'
 
 runs:
   using: composite
@@ -25,26 +37,86 @@ runs:
       env:
         V: ${{ inputs.php-version }}
         EXTENSIONS: ${{ inputs.extensions }}
+        INI_VALUES: ${{ inputs.ini-values }}
+        COVERAGE: ${{ inputs.coverage }}
       run: |
         set -euo pipefail
+        INSTALLED=$(ls /usr/bin/php[0-9].[0-9] 2>/dev/null | sed 's|/usr/bin/php||' | sort -V | tr '\n' ' ')
+        [ "$V" != latest ] || V=$(echo $INSTALLED | tr ' ' '\n' | tail -1)
         if [ ! -x "/usr/bin/php$V" ]; then
-          echo "::error::PHP $V is not installed on this runner; installed: $(ls /usr/bin/php[0-9].[0-9] 2>/dev/null | sed 's|/usr/bin/php||' | tr '\n' ' ')"
+          echo "::error::PHP $V is not installed on this runner; installed: $INSTALLED"
           exit 1
         fi
         for t in php phpize php-config phar phar.phar; do
           [ -e "/usr/bin/$t$V" ] && sudo update-alternatives --set "$t" "/usr/bin/$t$V" >/dev/null
         done
         php -v | head -1
-        MISSING=()
+
+        # setup-php's names are module names with a few aliases; a distro
+        # package can carry several modules (php-xml has dom and simplexml).
+        # grep -q on a pipe from php -m can end with SIGPIPE, which pipefail
+        # turns into "not loaded"; read the list once.
+        MODULES=$(php -m)
+        loaded() { grep -qix "$1" <<<"$MODULES"; }
+        MISSING=() DISABLE=()
         for e in ${EXTENSIONS//,/ }; do
-          php -m | grep -qix "$e" || MISSING+=("php$V-$e")
+          e=$(echo "$e" | tr 'A-Z' 'a-z')
+          case "$e" in
+            none|cli|common|dev) continue;;
+            :*) e=${e#:}; e=${e#php-}; loaded "$e" && DISABLE+=("$e"); continue;;
+            php-*) e=${e#php-};;
+          esac
+          e=${e%%-*}                      # redis-phpredis/phpredis@6.0.1, xdebug-3.4.0
+          module=$e package=$e
+          case "$e" in
+            sqlite)  module=sqlite3 package=sqlite3;;
+            mysql)   module=mysqli;;
+            opcache) module='zend opcache';;
+            pdo_mysql|mysqli|mysqlnd) package=mysql;;
+            pdo_pgsql) package=pgsql;;
+            pdo_sqlite) package=sqlite3;;
+            pdo_odbc) package=odbc;;
+            dom|simplexml|xmlreader|xmlwriter|xsl) package=xml;;
+            *) package=${package//_/-};;
+          esac
+          loaded "$module" || MISSING+=("php$V-$package")
         done
+        [ "$COVERAGE" != xdebug ] || loaded xdebug || MISSING+=("php$V-xdebug")
         if [ ${#MISSING[@]} -gt 0 ]; then
-          echo "installing ${MISSING[*]}"
+          mapfile -t MISSING < <(printf '%s\n' "${MISSING[@]}" | sort -u)
           sudo apt-get update -qq
-          sudo apt-get install -y -qq --no-install-recommends "${MISSING[@]}"
+          # Like setup-php, an extension that cannot be had is reported and the rest installed.
+          AVAILABLE=()
+          for p in "${MISSING[@]}"; do
+            if apt-cache show "$p" >/dev/null 2>&1; then AVAILABLE+=("$p"); else echo "::warning::$p is not a package this runner can install; the job runs without it"; fi
+          done
+          if [ ${#AVAILABLE[@]} -gt 0 ]; then
+            echo "installing ${AVAILABLE[*]}"
+            sudo apt-get install -y -qq --no-install-recommends "${AVAILABLE[@]}"
+          fi
         fi
-        if php -m | grep -ix pebble >/dev/null; then
+        for e in ${DISABLE[@]+"${DISABLE[@]}"}; do
+          sudo phpdismod -v "$V" -s cli "$e" && echo "$e disabled"
+        done
+
+        MODULES=$(php -m)
+
+        # After the image's 95-pebble-opcache.ini, so a job can change those too.
+        INI="/etc/php/$V/cli/conf.d/99-job.ini"
+        case "$COVERAGE" in
+          pcov)   sudo phpenmod -v "$V" -s cli pcov;;
+          xdebug) sudo phpenmod -v "$V" -s cli xdebug
+                  # The JIT refuses to start next to xdebug and says so in every process.
+                  INI_VALUES="xdebug.mode=coverage,opcache.jit=off${INI_VALUES:+,$INI_VALUES}";;
+          none|'') ;;
+          *) echo "::warning::coverage: $COVERAGE is not pcov, xdebug or none; ignored";;
+        esac
+        if [ -n "$INI_VALUES" ]; then
+          echo "$INI_VALUES" | tr ',' '\n' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' | grep -v '^$' | sudo tee "$INI" >/dev/null
+          echo "ini: $(tr '\n' ' ' < "$INI")"
+        fi
+
+        if loaded pebble; then
           echo "pebble $(php -r 'echo phpversion("pebble");') loaded"
         else
           echo "::warning::pebble is not loaded for PHP $V"

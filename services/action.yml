@@ -11,10 +11,13 @@ author: pebble
 inputs:
   services:
     description: >
-      Comma-separated list of mysql, postgres, redis, valkey, memcached,
-      meilisearch. A version after a colon selects one of the preinstalled
-      servers: mysql:8.0 (what plain mysql means), mysql:8.4, mysql:9, mysql:26;
-      postgres:16 (plain postgres), postgres:17, postgres:18, postgres:19.
+      Comma-separated list of mysql, mariadb, postgres, redis, valkey,
+      memcached, meilisearch. A version after a colon selects one of the
+      preinstalled servers: mysql:8.0 (what plain mysql means), mysql:5.7
+      (amd64 only), mysql:8.4, mysql:9, mysql:26; mariadb:12.3 (plain mariadb),
+      mariadb:10.11, mariadb:11.4, mariadb:11.8; postgres:16 (plain postgres),
+      postgres:14, postgres:15, postgres:17, postgres:18, postgres:19. MySQL
+      and MariaDB share the socket, so a job runs one of them.
     required: true
   databases:
     description: Comma-separated database names to create on mysql and postgres.
@@ -24,6 +27,23 @@ inputs:
     description: Also create <name>_test_1..N for each database (Laravel parallel testing).
     required: false
     default: '0'
+  user:
+    description: >
+      The account the job's services block had (MYSQL_USER, POSTGRES_USER), made
+      on mysql and postgres with every privilege. root on MySQL takes the
+      password below, empty too (MYSQL_ALLOW_EMPTY_PASSWORD).
+    required: false
+    default: ''
+  password:
+    description: The password of that user; with no user, root's on MySQL. PostgreSQL accepts any password.
+    required: false
+    default: ''
+  ports:
+    description: >
+      Other ports than the usual ones, as name=port pairs (mysql=33306,
+      redis=6380), for a job whose services block mapped one.
+    required: false
+    default: ''
 
 runs:
   using: composite
@@ -33,10 +53,16 @@ runs:
         SERVICES: ${{ inputs.services }}
         DATABASES: ${{ inputs.databases }}
         PARALLEL: ${{ inputs.parallel }}
+        DB_USER: ${{ inputs.user }}
+        DB_PASSWORD: ${{ inputs.password }}
+        PORTS: ${{ inputs.ports }}
       run: |
         set -euo pipefail
         if ! command -v pebble-services >/dev/null; then
           echo "::error::pebble-services is not on this runner; this action only works on a pebble runner image (docker/runner)"
           exit 1
         fi
-        sudo pebble-services start "$SERVICES" ${DATABASES:+--databases "$DATABASES"} --parallel "$PARALLEL"
+        ACCOUNT=()
+        if [ -n "$DB_USER" ]; then ACCOUNT=(--user "$DB_USER" --password "$DB_PASSWORD")
+        elif [ -n "$DB_PASSWORD" ]; then ACCOUNT=(--password "$DB_PASSWORD"); fi
+        sudo pebble-services start "$SERVICES" ${DATABASES:+--databases "$DATABASES"} --parallel "$PARALLEL" ${PORTS:+--ports "${PORTS// /}"} ${ACCOUNT[@]+"${ACCOUNT[@]}"}
