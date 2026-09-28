@@ -26,7 +26,7 @@ php-code-coverage reads them: the include and exclude lists of `<source>`
 (PHPUnit 10+), `<coverage>` (9.3+) or `<filter><whitelist>`. The `directory`
 and `exclude` inputs override them. `pebble run` hooks the PHPUnit extension in through a generated
 bootstrap script (PHPUnit 10+) or a copy of the configuration (PHPUnit 9), so
-`phpunit.xml` stays unchanged. It works with PHPUnit 9 to 12, paratest,
+`phpunit.xml` stays unchanged. It works with PHPUnit 9 to 13, paratest,
 `php artisan test --parallel`, Pest, and Symfony's phpunit-bridge.
 
 The releases here are the coverage build. Fork mode, where the application
