@@ -104,9 +104,12 @@ runs:
         # After the image's 95-pebble-opcache.ini, so a job can change those too.
         INI="/etc/php/$V/cli/conf.d/99-job.ini"
         case "$COVERAGE" in
-          pcov)   sudo phpenmod -v "$V" -s cli pcov;;
+          # The JIT refuses to start next to pcov or xdebug (both replace
+          # zend_execute_ex) and says so on stderr in every process, which
+          # PHPUnit reports as an error in a test that runs in its own process.
+          pcov)   sudo phpenmod -v "$V" -s cli pcov
+                  INI_VALUES="opcache.jit=off${INI_VALUES:+,$INI_VALUES}";;
           xdebug) sudo phpenmod -v "$V" -s cli xdebug
-                  # The JIT refuses to start next to xdebug and says so in every process.
                   INI_VALUES="xdebug.mode=coverage,opcache.jit=off${INI_VALUES:+,$INI_VALUES}";;
           none|'') ;;
           *) echo "::warning::coverage: $COVERAGE is not pcov, xdebug or none; ignored";;
