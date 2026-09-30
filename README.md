@@ -36,18 +36,21 @@ says so and runs the tests as PHPUnit does.
 
 ## Report
 
-`pebble run` takes PHPUnit's `--coverage-clover` and `--coverage-text` out of
-the command and writes those reports from the streams after the tests, so
+`pebble run` takes PHPUnit's `--coverage-clover`, `--coverage-cobertura`,
+`--coverage-html` and `--coverage-text` out of the command and writes those reports from the streams after the tests, so
 PHPUnit does not look for a coverage driver. `pebble report` writes the same
 reports as a step of its own. It reads the streams from `$PEBBLE_OUTPUT`,
 which the action exports. Without `-f` it prints a text summary and writes no file. Pass
-`-f clover` or `-f lcov` for a file an uploader can read:
+`-f clover`, `-f cobertura` or `-f lcov` for a file an uploader can read, or
+`-f html` for pages to read yourself:
 
 | Command                        | Writes                    |
 |--------------------------------|---------------------------|
 | `pebble report`                 | text summary on stdout    |
 | `pebble report -f clover`       | `build/logs/clover.xml`   |
 | `pebble report -f lcov`         | `build/logs/lcov.info`    |
+| `pebble report -f cobertura`    | `build/logs/cobertura.xml` |
+| `pebble report -f html`         | `build/coverage/` (`index.html` and a page per file) |
 | `pebble report -f clover -o x`  | `x` (`-` for stdout)      |
 
 `build/logs/` is where most uploaders look by default, so they need no
