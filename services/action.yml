@@ -31,7 +31,9 @@ inputs:
     description: >
       The account the job's services block had (MYSQL_USER, POSTGRES_USER), made
       on mysql and postgres with every privilege. root on MySQL takes the
-      password below, empty too (MYSQL_ALLOW_EMPTY_PASSWORD).
+      password below, empty too: a block with MYSQL_ALLOW_EMPTY_PASSWORD or
+      MARIADB_ALLOW_EMPTY_ROOT_PASSWORD needs user root and no password, because
+      with no user root keeps the password root.
     required: false
     default: ''
   password:

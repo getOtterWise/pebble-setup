@@ -56,6 +56,27 @@ which the action exports. Without `-f` it prints a text summary and writes no fi
 `build/logs/` is where most uploaders look by default, so they need no
 `--file` argument.
 
+### Branch coverage
+
+`pebble run --branch-coverage` also records branches as php-code-coverage
+counts them with Xdebug and `--path-coverage`: the Clover report then has
+`conditionals` and `coveredconditionals`, the Cobertura report a `branch-rate`
+per method, class and package and `branches-covered`/`branches-valid` for the
+run, the text summary a `Branches:` line. Line coverage stays the same. It
+costs 3 to 11 percent on top of line coverage. Without `pebble run`, set
+`PEBBLE_BRANCHES=1` in the job's environment: the extension reads it when PHP
+starts. `--path-coverage` (`PEBBLE_PATHS=1`) records paths too, as Xdebug
+does for php-code-coverage: the text summary gets a `Paths:` line, and the
+CRAP index uses the share of paths taken. The Clover report then also has
+`paths` and `coveredpaths` on its metrics and method lines, and the
+Cobertura report `path-rate`, `paths-covered` and `paths-valid`; neither
+format defines a field for paths, so these are attributes of pebble's own. On CPU-bound code it costs about
+twice what branches cost; on an application suite the two are alike.
+
+```yaml
+- run: pebble run --branch-coverage -- vendor/bin/phpunit --coverage-cobertura build/logs/cobertura.xml
+```
+
 ## Prebuilt assets
 
 Each release of this repository carries `pebble.so` for PHP 8.1 to 8.5 (NTS,

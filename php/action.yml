@@ -29,6 +29,14 @@ inputs:
       none (the default) keeps the image as it is.
     required: false
     default: 'none'
+  jit:
+    description: >
+      tracing (or function) switches the JIT on for this job's CLI; off by
+      default, which is what a job on GitHub's runners gets. Measure it
+      first: it made rackbeat's suite 10 percent faster than opcache alone,
+      and it broke tests in laravel/framework and snipe-it that pass without it.
+    required: false
+    default: 'off'
 
 runs:
   using: composite
@@ -39,6 +47,7 @@ runs:
         EXTENSIONS: ${{ inputs.extensions }}
         INI_VALUES: ${{ inputs.ini-values }}
         COVERAGE: ${{ inputs.coverage }}
+        JIT: ${{ inputs.jit }}
       run: |
         set -euo pipefail
         INSTALLED=$(ls /usr/bin/php[0-9].[0-9] 2>/dev/null | sed 's|/usr/bin/php||' | sort -V | tr '\n' ' ')
@@ -74,6 +83,7 @@ runs:
             opcache) module='zend opcache';;
             pdo_mysql|mysqli|mysqlnd) package=mysql;;
             pdo_pgsql) package=pgsql;;
+            pdo_sqlsrv) package=sqlsrv;;
             pdo_sqlite) package=sqlite3;;
             pdo_odbc) package=odbc;;
             dom|simplexml|xmlreader|xmlwriter|xsl) package=xml;;
@@ -101,8 +111,16 @@ runs:
 
         MODULES=$(php -m)
 
-        # After the image's 95-pebble-opcache.ini, so a job can change those too.
-        INI="/etc/php/$V/cli/conf.d/99-job.ini"
+        # After the image's zz-0-opcache.ini (which comes after setup-php's
+        # 99-pecl.ini), so a job can change those too.
+        INI="/etc/php/$V/cli/conf.d/zz-1-job.ini"
+        case "$JIT" in
+          off|''|none|disable|0|false) ;;
+          tracing|function|on|true|1) [ "$COVERAGE" = none ] || [ -z "$COVERAGE" ] \
+                && INI_VALUES="opcache.jit=$([ "$JIT" = function ] && echo function || echo tracing)${INI_VALUES:+,$INI_VALUES}" \
+                || echo "::warning::jit: $JIT is ignored with coverage: $COVERAGE";;
+          *) echo "::warning::jit: $JIT is not tracing, function or off; ignored";;
+        esac
         case "$COVERAGE" in
           # The JIT refuses to start next to pcov or xdebug (both replace
           # zend_execute_ex) and says so on stderr in every process, which
@@ -124,7 +142,7 @@ runs:
         else
           echo "::warning::pebble is not loaded for PHP $V"
         fi
-        # The image runs the CLI with opcache and the tracing JIT on; a
-        # coverage run switches them off for its own processes only.
+        # The image runs the CLI with opcache on and the JIT off unless the job
+        # asks; a coverage run switches opcache off for its own processes only.
         php -r '$s = function_exists("opcache_get_status") ? @opcache_get_status(false) : false;
                 printf("opcache %s, JIT %s\n", ini_get("opcache.enable_cli") ? "on" : "off", empty($s["jit"]["enabled"]) ? "off" : "on");'
