@@ -29,6 +29,12 @@ bootstrap script (PHPUnit 10+) or a copy of the configuration (PHPUnit 9), so
 `phpunit.xml` stays unchanged. It works with PHPUnit 9 to 13, paratest,
 `php artisan test --parallel`, Pest, and Symfony's phpunit-bridge.
 
+`pebble run` prints one line before the tests (for example `Pebble v0.12.3 by OtterWise:
+line coverage`) and one line for each report it writes. Warnings always
+print. `pebble run --verbose`, or `PEBBLE_VERBOSE=1` in the step's `env`, also
+prints what it detected and changed: the coverage lists from the
+configuration, the opcache and PCOV settings, and the generated bootstrap.
+
 The releases here are the coverage build. Fork mode, where the application
 boots once per process and each test runs in a forked copy, is not part of
 it: it runs on the pebble hosted runner. `pebble run --fork` with this build
