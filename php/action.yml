@@ -13,8 +13,9 @@ inputs:
   extensions:
     description: >
       Comma-separated PHP extensions, as setup-php takes them. What the image
-      has costs nothing; the rest comes from the distro packages the image is
-      built from, a few seconds each. A leading colon disables an extension,
+      has costs nothing, and one it carries switched off (xdebug, pcov) is
+      switched on; the rest comes from the distro packages the image is built
+      from, a few seconds each. A leading colon disables an extension,
       and a version or source after the name is ignored (the distro's build is
       what the image has).
     required: false
@@ -33,7 +34,7 @@ inputs:
     description: >
       tracing (or function) switches the JIT on for this job's CLI; off by
       default, which is what a job on GitHub's runners gets. Measure it
-      first: it made rackbeat's suite 10 percent faster than opcache alone,
+      first: it made rackbeat's suite 8 percent faster than opcache alone,
       and it broke tests in laravel/framework and snipe-it that pass without it.
     required: false
     default: 'off'
@@ -67,7 +68,8 @@ runs:
         # turns into "not loaded"; read the list once.
         MODULES=$(php -m)
         loaded() { grep -qix "$1" <<<"$MODULES"; }
-        MISSING=() DISABLE=()
+        MISSING=() DISABLE=() ENABLE=()
+        EXT_DIR=$(php -r 'echo ini_get("extension_dir");')
         for e in ${EXTENSIONS//,/ }; do
           e=$(echo "$e" | tr 'A-Z' 'a-z')
           case "$e" in
@@ -89,7 +91,14 @@ runs:
             dom|simplexml|xmlreader|xmlwriter|xsl) package=xml;;
             *) package=${package//_/-};;
           esac
-          loaded "$module" || MISSING+=("php$V-$package")
+          loaded "$module" && continue
+          # Installed but switched off (the image's xdebug and pcov): apt would
+          # change nothing, so switch it on instead.
+          if [ -f "/etc/php/$V/mods-available/$module.ini" ] && [ -f "$EXT_DIR/$module.so" ]; then
+            ENABLE+=("$module")
+          else
+            MISSING+=("php$V-$package")
+          fi
         done
         [ "$COVERAGE" != xdebug ] || loaded xdebug || MISSING+=("php$V-xdebug")
         if [ ${#MISSING[@]} -gt 0 ]; then
@@ -105,6 +114,9 @@ runs:
             sudo apt-get install -y -qq --no-install-recommends "${AVAILABLE[@]}"
           fi
         fi
+        for e in ${ENABLE[@]+"${ENABLE[@]}"}; do
+          sudo phpenmod -v "$V" -s cli "$e" && echo "$e enabled"
+        done
         for e in ${DISABLE[@]+"${DISABLE[@]}"}; do
           sudo phpdismod -v "$V" -s cli "$e" && echo "$e disabled"
         done

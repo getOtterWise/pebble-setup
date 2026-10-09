@@ -82,8 +82,8 @@ twice what branches cost; on an application suite the two are alike.
 Each release of this repository carries `pebble.so` for PHP 8.1 to 8.5 (NTS,
 Linux x86_64 and macOS arm64), the `pebble` binary for those platforms, and the
 PHP glue, all without fork mode. The extension source is not published, so a PHP build without a
-prebuilt asset (ZTS, debug, Linux arm64, Alpine) fails with a message that
-says so. Organizations with access to the private source can set
+prebuilt asset (ZTS, debug, Linux arm64) fails with a message that
+says so. The action ships glibc builds only. Organizations with access to the private source can set
 `repository: getOtterWise/pebble` and a `token` to get the from-source
 fallback.
 
@@ -93,7 +93,7 @@ fallback.
 |--------------|----------------------|---------|
 | `directory`  | from the configuration | Comma-separated directories and files to cover, relative to the workspace or absolute. Default: the include list of `phpunit.xml`. |
 | `exclude`    | from the configuration | Comma-separated paths to exclude, relative to the workspace. Default: the exclude list of `phpunit.xml`. |
-| `configuration` | `phpunit.xml`, `.xml.dist`, `.dist.xml` | The PHPUnit configuration to read those lists from, relative to the workspace. |
+| `configuration` | `phpunit.xml`, `phpunit.xml.dist`, `phpunit.dist.xml` | The PHPUnit configuration to read those lists from, relative to the workspace. |
 | `output`     | `.pebble/runs`        | Directory for the coverage streams, exported as `PEBBLE_OUTPUT`. |
 | `version`    | `latest`             | pebble release tag to install. |
 | `repository` | `getOtterWise/pebble-setup` | Repository that publishes the releases. |
@@ -120,15 +120,20 @@ repository replace `setup-php` and the `services:` block:
 
 `php` switches the preinstalled PHP in under a second; `extensions` adds
 distro packages the image does not carry, a few seconds each, and reads
-setup-php's list as it is, with `ini-values` and `coverage` too. `services`
+setup-php's list as it is, with `ini-values` and `coverage` too. `jit: tracing` (or `function`)
+switches the JIT on for the job; it is off by default. Measure it first: it
+broke tests in laravel/framework and snipe-it that pass without it. `services`
 starts the listed servers on 127.0.0.1 (MySQL root/root, PostgreSQL
 postgres/postgres, Redis without a password) with the databases, and
 `parallel: N` adds `<name>_test_1` to `<name>_test_N` for each of them,
 which is what Laravel's `--parallel` expects. `user` and `password` give the
 job the account its `services:` block had (`user: root` and no `password`
 for `MYSQL_ALLOW_EMPTY_PASSWORD`), and `ports: mysql=33306` the port it
-mapped. MariaDB (`mariadb:10.11` to `mariadb:12.3`), MySQL 5.7 (amd64) and
-PostgreSQL 14 to 19 are there too.
+mapped. `services` also takes `valkey`, `memcached` and `meilisearch`. A colon picks
+a version: `mysql:8.4` (the default), `8.0`, `9`, `26` and `5.7` (amd64);
+`mariadb:12.3` (the default), `11.8`, `11.4` and `10.11`; `postgres:16` (the
+default) and `14` to `19`. MySQL and MariaDB share the socket, so a job runs
+one of them.
 
 A third one keeps what the next job should not build again:
 
@@ -159,7 +164,8 @@ A front end gives two more entries, and they are a different shape from
 `vendor`. `composer install` corrects a near miss in place, so a prefix key
 helps it. `npm ci` deletes `node_modules` before it installs, so a near miss
 buys nothing: keep the directory itself and skip the step on a hit, which
-`cache-hit` reports.
+`cache-hit` reports (`true` for the exact key only). `cache-matched-key` is the
+key that was restored, which differs from `key` after a `restore-keys` match.
 
 ```yaml
 - uses: actions/setup-node@v7
@@ -190,7 +196,7 @@ buys nothing: keep the directory itself and skip the step on a hit, which
     path: public/build
 ```
 
-Three things decide whether this is correct:
+Four things decide whether this is correct:
 
 - **The Node major belongs in the key.** A compiled native module built for
   one major does not load in the next. On the runner image `setup-node` finds
@@ -263,11 +269,11 @@ path to save instead.
   `\Pebble\Isolation::install();` in the project's bootstrap file instead, or
   those tests carry no lines and nothing warns.
 - `container:` jobs must run the action inside the container.
-- A pebble runner has no Docker daemon. Docker container actions (an action
-  with a Dockerfile, or `docker://`), `services:` blocks and `container:` jobs
-  do not run on one; the `services` action above starts the servers instead,
-  and a call to `docker` prints that. On a GitHub-hosted runner all of them
-  work as usual.
+- Some pebble runners have no Docker daemon. On such a runner, Docker container
+  actions (an action with a Dockerfile, or `docker://`), `services:` blocks and
+  `container:` jobs do not run; the `services` action above starts the servers
+  instead, and a call to `docker` prints that. When `docker` works on the
+  runner, all three run. On a GitHub-hosted runner all of them work as usual.
 
 ## License
 

@@ -20,7 +20,7 @@ inputs:
       and MariaDB share the socket, so a job runs one of them.
     required: true
   databases:
-    description: Comma-separated database names to create on mysql and postgres.
+    description: Comma-separated database names to create on mysql, mariadb and postgres.
     required: false
     default: ''
   parallel:

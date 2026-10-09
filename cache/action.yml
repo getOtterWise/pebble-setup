@@ -5,7 +5,7 @@ description: >
   per-tenant cache service over the network with a credential minted for this
   job alone, so there is no cache directory two jobs share. The scope is not
   the job's to choose: a branch reads its own entries and then the default
-  branch's, and a fork pull request can write neither.
+  branch's, and a job of a fork pull request writes a scope of its own and never the branch's.
 
   It takes no path: an entry holds the paths its save named, and puts them
   back where they were. Pair it with getOtterWise/pebble-setup/cache/save@v1
